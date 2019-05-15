@@ -1,0 +1,3 @@
+[submodule "deps/blockworld"]
+	path = deps/blockworld
+	url = git@github.mit.edu:belledon/blockworld.git

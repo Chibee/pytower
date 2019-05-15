@@ -1,0 +1,17 @@
+# user data
+output
+user.conf
+
+# container + python env
+
+cont
+.pyenv
+*.egg-info
+
+# miscellaneous
+
+blender.tar.bz2
+*.lock
+tmp*
+dask-worker-space
+__pycache__
