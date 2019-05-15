@@ -4,7 +4,6 @@ from itertools import repeat
 from blockworld import towers, blocks
 from blockworld.simulation import physics, generator, tower_scene
 from blockworld.simulation.substances import Substance
-from experiment.hypothesis.block_hypothesis import simulate
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
@@ -90,6 +89,20 @@ class SimpleGen(generator.Generator):
             base = towers.EmptyTower(base)
         np.random.seed()
         return self.sample_tower(base, n_blocks)
+
+def simulate(tower, frames = 120, fps = 30):
+    """
+    Controls simulations and extracts observations
+    Arguments:
+        tower (blockworld.Tower): A tower to run physics over
+        frames (int, optional) : The number of frames to retrieve from physics
+        fps (int, optional): The number of frames per second to capture.
+    """
+    sim = tower_scene.TowerPhysics(tower.serialize())
+    trace = sim.get_trace(frames, tower.ordered_blocks, fps = fps)
+    return trace
+
+
 
 class SimpleSim(physics.TowerEntropy):
 

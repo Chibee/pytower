@@ -123,8 +123,12 @@ class PushedSim(ShiftedSim):
     force vector applied to each block at the initial frame.
     """
 
-    def simulate(self, tower, to_push = None, force = None,
-                 window = 0, frames = 240, fps = 30):
+    def __init__(self, *args, force = 0.0, **kwargs):
+        self.force = force
+        super(PushedSim, self).__init__(*args, **kwargs)
+
+    def simulate(self, tower, to_push = None, window = 0,
+                 force = 0.0, frames = 240, fps = 30):
         """
         Controls simulations and extracts trace
         Arguments:
@@ -138,13 +142,13 @@ class PushedSim(ShiftedSim):
                               push_window = window, fps = fps)
         return trace
 
-    def sample_force(self, force):
+    def sample_force(self):
         """
         Samples a force vector in the xy plane
         """
         force_theta = np.random.uniform(0, np.pi*2)
-        f_x = force * np.cos(force_theta)
-        f_y = force * np.sin(force_theta)
+        f_x = self.force * np.cos(force_theta)
+        f_y = self.force * np.sin(force_theta)
         return [f_x, f_y, 0.]
 
 
@@ -171,7 +175,7 @@ class PushedSim(ShiftedSim):
         traces = np.empty((k,), dtype = object)
         perturbations = self.perturb(tower, n = k)
         for i in range(k):
-            force_vec = self.sample_force(force)
+            force_vec = self.sample_force()
             traces[i] = self.simulate(perturbations[i],
                                       force = force_vec,
                                       to_push = to_push,

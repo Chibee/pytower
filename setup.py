@@ -12,6 +12,11 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages = ['pytower'],
+    entry_points = {
+        'console_scripts' : [
+            'list-config = pytower.utils:main'
+        ]
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

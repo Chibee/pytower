@@ -220,7 +220,7 @@ def main():
         out_d += '_extended'
         base_path = os.path.basename(os.path.splitext(args.base_path)[0])
 
-    progress_file = os.path.join(out_d, 'mutations.json')
+    progress_file = os.path.join(out_d, 'progess.json')
     if os.path.isdir(out_d):
         if os.path.isfile(progress_file):
             with open(progress_file, 'r') as f:

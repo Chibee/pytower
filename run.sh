@@ -2,11 +2,6 @@
 
 . load_config.sh
 
-echo "INFO for ENV"
-for i in "${!ENV[@]}";do
-    echo -e "\t$i => ${ENV[$i]}";
-done
-
 # Define the path to the container and conda env
 CONT="${ENV['path']}"
 PYENV="${ENV['python']}"

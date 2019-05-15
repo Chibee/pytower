@@ -12,7 +12,12 @@ render_path = os.path.join(dir_path, 'render.py')
 mat_path = os.path.join(dir_path, 'materials.blend')
 cmd = '/blender/blender -noaudio --background -P {0!s}'
 
-def render(scene_str, traces, theta, out, mode, blocks, materials = mat_path):
+default_res = (512,512)
+
+def render(scene_str, traces, out, mode,
+           theta = 0., blocks = None, materials = mat_path,
+           resolution = default_res
+):
     """ Subprocess call to blender
 
     Arguments:
@@ -42,7 +47,7 @@ def render(scene_str, traces, theta, out, mode, blocks, materials = mat_path):
         '--trace',
         t_path,
         '--resolution',
-        '512', '512',
+        *list(map(str, resolution)),
         '--render_mode',
         mode,
         '--theta',

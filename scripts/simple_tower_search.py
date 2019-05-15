@@ -25,46 +25,16 @@ import argparse
 import datetime
 
 import numpy as np
-import pandas as pd
-from tqdm import tqdm
 from pprint import pprint
 from dask import distributed
 from dask_jobqueue import SLURMCluster
-
-from utils import config
-# from stimuli.generate_towers import MyGenerator
 from blockworld.utils.json_encoders import TowerEncoder
-from stimuli.analyze_direction import ExpGen, ExpStability
 
-CONFIG = config.Config()
+from pytower.generator.noisy_gen import PushedSim
+from pytower.generator.simple_gen import SimpleGen
 
-dir_path = os.path.dirname(os.path.realpath(__file__))
-dir_path = os.path.dirname(dir_path)
-
-def idxquantile(s, q=0.5, *args, **kwargs):
-    """ Returns the specified quantile.
-    """
-    qv = s.quantile(q, *args, **kwargs)
-    return (s.sort_values()[::-1] <= qv).idxmax()
-
-
-def cos_2vec(v1, v2):
-    return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-
-def mutate_tower(t, block):
-    """ Changes the given block in the tower to an unknown appearance
-    """
-    aps = t.extract_feature('appearance')
-    aps[int(block)] = 'U'
-    t = t.apply_feature('appearance', aps)
-    return t
-
-def add_cols(row):
-    parts = row['id'].split('_')
-    row['block'] = int(parts[0])
-    row['mut'] = parts[1]
-    return row
-
+from pytower.utils import Config
+CONFIG = Config()
 
 def evaluate_tower(base, size, gen, phys, pred, out, debug = False):
     """ Encapsulation for searching for interesting towers.
@@ -90,41 +60,42 @@ def evaluate_tower(base, size, gen, phys, pred, out, debug = False):
     # Build base tower
     tower = gen(base, size)
     # compute stats over towers
-    stats = phys(tower)[0]
+    trace, stats, _ = phys.analyze(tower)
     # evaluate metrics
-    columns = ('id', 'angle', 'mag', 'instability', 'instability_p')
-    print(stats['instability'], np.mean(stats['instability_p']))
-    if not pred(stats):
-        return (False, None)
+    print(stats['instability'], stats['instability_mu'])
+    passed = pred(stats) or debug
+    hashed = None
+    if passed:
 
-    result = {
-        'struct': tower.serialize(),
-        'stats' : {k: stats[k] for k in columns},
-        'trace' : stats['trace'],
-    }
-    # Package results for json
-    # Save the resulting tower using the content of `result` for
-    # the hash / file name
-    r_str = json.dumps(result, indent = 4, sort_keys = True,
-                         cls = TowerEncoder)
-    hashed = hashlib.md5()
-    hashed.update(r_str.encode('utf-8'))
-    hashed = hashed.hexdigest()
-    out_file = out.format(hashed)
-    print('Writing to ' + out_file)
-    with open(out_file, 'w') as f:
-        f.write(r_str)
-        return (True, hashed)
+        result = {
+            'struct': tower.serialize(),
+            'stats' : stats,
+            'trace' : trace,
+        }
+        # Package results for json
+        # Save the resulting tower using the content of `result` for
+        # the hash / file name
+        r_str = json.dumps(result, indent = 4, sort_keys = True,
+                             cls = TowerEncoder)
+        hashed = hashlib.md5()
+        hashed.update(r_str.encode('utf-8'))
+        hashed = hashed.hexdigest()
+        out_file = out.format(hashed)
+        print('Writing to ' + out_file)
+        with open(out_file, 'w') as f:
+            f.write(r_str)
+
+    return (passed, hashed)
 
 def create_predicate(mode, thresh):
     if mode == 'stable':
         pred = lambda t: all([
             t['instability'] == 0,
-            (np.mean(t['instability_p']) < thresh)])
+            t['instability_mu'] < thresh])
     else:
         pred = lambda t: all([
             t['instability'] >= thresh,
-            (np.mean(t['instability_p']) > thresh)])
+            t['instability_mu'] >= thresh])
     return pred
 
 def main():
@@ -139,13 +110,15 @@ def main():
                         default = 10)
     parser.add_argument('--base', type = int, nargs = 2, default = (2,2),
                         help = 'Dimensions of base.')
+    parser.add_argument('--base_path', type = str,
+                        help = 'Path to base tower.')
     parser.add_argument('--shape', type = int, nargs = 3, default = (3,1,1),
                         help = 'Dimensions of block (x,y,z).')
     parser.add_argument('--out', type = str, help = 'Path to save towers.')
-    parser.add_argument('--base_path', type = str,
-                        help = 'Path to base tower.')
-    parser.add_argument('--noise', type = float, default = 0.04,
+    parser.add_argument('--noise', type = float, default = 0.15,
                         help = 'Noise to add to positions.')
+    parser.add_argument('--force', type = float, default = 900.0,
+                        help = 'Force to push blocks')
     parser.add_argument('--metric', type = str, default = 'stable',
                         choices = ['stable', 'unstable'],
                         help = 'Type of predicate.')
@@ -155,25 +128,30 @@ def main():
                         help = 'Use dask distributed on SLURM.')
     parser.add_argument('--batch', type = int, default = 1,
                         help = 'Number of towers to search concurrently.')
+    parser.add_argument('--debug', action = 'store_true',
+                        help = 'Run in debug (no rejection).')
     args = parser.parse_args()
 
+    if args.debug:
+        print('Running in debug mode. Will not reject towers')
+
+    # Figure out where to save towers
     if args.out is None:
         suffix = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
         out_d =  '_'.join(("simple", args.metric, suffix))
         out_d = os.path.join(CONFIG['PATHS', 'towers'], out_d)
     else:
         out_d = os.path.join(CONFIG['PATHS', 'towers'], args.out)
-
     print('Saving new towers to {0!s}'.format(out_d))
 
+    # Either build tower from scratch or ontop of a base
     if args.base_path is None:
         base = args.base
-        base_path = '{0:d}x{1:d}'.format(*base)
     else:
         base = towers.simple_tower.load(args.base_path)
         out_d += '_extended'
-        base_path = os.path.basename(os.path.splitext(args.base_path)[0])
 
+    # Keep track of how many towers have been created
     progress_file = os.path.join(out_d, 'mutations.json')
     if os.path.isdir(out_d):
         with open(progress_file, 'r') as f:
@@ -185,12 +163,15 @@ def main():
 
     out_path = os.path.join(out_d, '{0!s}.json')
     enough_scenes = lambda l: len(np.argwhere(l == '')) == 0
+
+    # Define the predicate for rejection sampling
     predicate = create_predicate(args.metric, args.threshold)
 
+    # Initialize the tower builder and simulator
     materials = {'Wood' : 1.0}
-    gen = ExpGen(materials, 'local', args.shape)
-    phys = NoisyStability(noise = args.noise, frames = 240)
-
+    gen = SimpleGen(materials, 'local', args.shape)
+    phys = PushedSim(noise = args.noise, force = args.force,
+                     frames = 240)
     params = {
         'base' : base,
         'size' : args.size,
@@ -198,10 +179,11 @@ def main():
         'phys' : phys,
         'pred' : predicate,
         'out'  : out_path,
-        'debug': False,
+        'debug': args.debug,
     }
     eval_tower = lambda x: evaluate_tower(**params)
 
+    # Distribute tasks using Dask
     if enough_scenes(results):
         print('All done')
     else:
@@ -261,7 +243,6 @@ def initialize_dask(n, factor = 5, slurm = False):
             'processes' : 1,
             'job_extra' : [
                 '--qos use-everything',
-                # '--qos tenenbaum',
                 '--array 0-{0:d}'.format(n - 1),
                 '--requeue',
                 '--output "/dev/null"'
