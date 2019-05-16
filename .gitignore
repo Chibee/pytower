@@ -10,6 +10,7 @@ cont
 
 # miscellaneous
 
+.vagrant*
 blender.tar.bz2
 *.lock
 tmp*
