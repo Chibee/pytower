@@ -152,10 +152,8 @@ def main():
         out_d += '_extended'
 
     # Keep track of how many towers have been created
-    progress_file = os.path.join(out_d, 'mutations.json')
     if os.path.isdir(out_d):
-        with open(progress_file, 'r') as f:
-            files = json.load(f)
+        files = glob.glob(os.path.join(out_d, '*.json'))
         results = np.array(files)
     else:
         os.mkdir(out_d)
@@ -219,17 +217,14 @@ def main():
             else:
                 client.cancel(ac.futures)
 
-        files = results.tolist()
-        with open(progress_file, 'w') as f:
-            json.dump(files, f)
-
         client.close()
 
 def initialize_dask(n, factor = 5, slurm = False):
 
     if not slurm:
         cores =  len(os.sched_getaffinity(0))
-        cluster = distributed.LocalCluster(n_workers = cores,
+        cluster = distributed.LocalCluster(processes = False,
+                                           n_workers = 1,
                                            threads_per_worker = 1)
 
     else:
